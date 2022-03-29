@@ -3,7 +3,7 @@
 // 2022.03.28 uart communication library(chalres-park)
 //
 //------------------------------------------------------------------------------
-//------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------
 #include <stdio.h>
 #include <stdarg.h>
 #include <stdlib.h>
@@ -19,8 +19,9 @@
 #include <sys/mman.h>
 #include <linux/fb.h>
 #include <getopt.h>
+#include <termios.h> // Contains POSIX terminal control definitions
 
-
+#include "uartlib.h"
 //------------------------------------------------------------------------------
 //------------------------------------------------------------------------------
 const char *OPT_DEVICE_NAME = "/dev/ttyS0";
@@ -82,13 +83,51 @@ void dump_fb_info (void *pdata)
 }
 
 //------------------------------------------------------------------------------
+int chk_func(ptc_var_t *var)
+{
+	if(var->buf[(var->p_sp + var->size -1) % var->size] != '@')	return 0;
+	if(var->buf[(var->p_sp               ) % var->size] != '@')	return 0;
+	return 1;
+}
+
+int cat_func (ptc_var_t *var)
+{
+	int i;
+	for (i = 1; i < var->size -1; i++)
+		printf ("buf[%d] = 0x%02x\n", i, var->buf[(var->p_sp +i)]);
+
+	return 1;
+}
+//------------------------------------------------------------------------------
 int main(int argc, char **argv)
 {
+	int fd;
+	ptc_grp_t *ptc_grp;
+	byte idata, icount = 0;;
+
     parse_opts(argc, argv);
 
 	if (opt_info)
 		dump_fb_info((void *)OPT_DEVICE_NAME);
 
+	fd = uart_init (OPT_DEVICE_NAME, B115200);
+
+	ptc_grp = ptc_grp_init (1);
+	if (ptc_grp) {
+		if (!ptc_func_init (ptc_grp, 0, 10, chk_func, cat_func))
+			goto out;
+	}
+
+	while (ptc_grp->p[0].var.open) {
+		if (read(fd, &idata, 1)) {
+			fprintf(stdout, "%d : %c\n", icount++, idata);
+			ptc_event (ptc_grp, idata);
+		}
+	}
+
+out:
+	uart_close(fd);
+	ptc_grp_close(ptc_grp);
 	return 0;
 }
 
