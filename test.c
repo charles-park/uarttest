@@ -83,6 +83,19 @@ void dump_fb_info (void *pdata)
 }
 
 //------------------------------------------------------------------------------
+byte	str[10];
+
+#pragma pack(1)
+typedef struct send__t {
+	byte	header;
+	byte	cmd;
+	byte	payload[100];
+	byte	tail;
+}	send_t;	
+
+send_t send;
+
+//------------------------------------------------------------------------------
 int chk_func(ptc_var_t *var)
 {
 	if(var->buf[(var->p_sp + var->size -1) % var->size] != '@')	return 0;
@@ -96,6 +109,16 @@ int cat_func (ptc_var_t *var)
 	for (i = 1; i < var->size -1; i++)
 		printf ("buf[%d] = 0x%02x\n", i, var->buf[(var->p_sp +i)]);
 
+
+	send.header = '@';
+	send.cmd = 'Q';
+	memset(send.payload, '\n', sizeof(send.payload));
+	sprintf(send.payload, "%s", "This is sample program!!");
+	send.tail = '@';
+
+	fprintf(stdout, "send size = %ld\n", sizeof(send));
+//	fprintf(stdout, "send size = %ld\n", sizeof(str));
+
 	return 1;
 }
 //------------------------------------------------------------------------------
@@ -104,19 +127,22 @@ int main(int argc, char **argv)
 	int fd;
 	ptc_grp_t *ptc_grp;
 	byte idata, icount = 0;;
+	byte *p;
 
     parse_opts(argc, argv);
 
 	if (opt_info)
 		dump_fb_info((void *)OPT_DEVICE_NAME);
 
-	fd = uart_init (OPT_DEVICE_NAME, B115200);
+	if ((fd = uart_init (OPT_DEVICE_NAME, B115200)) < 0)
+		return -1;
 
-	ptc_grp = ptc_grp_init (1);
-	if (ptc_grp) {
+	if ((ptc_grp = ptc_grp_init (1))) {
 		if (!ptc_func_init (ptc_grp, 0, 10, chk_func, cat_func))
 			goto out;
 	}
+	else
+		return -1;
 
 	while (ptc_grp->p[0].var.open) {
 		if (read(fd, &idata, 1)) {
@@ -125,6 +151,11 @@ int main(int argc, char **argv)
 		}
 	}
 
+	p = (byte *)&send;
+	for (idata = 0; idata < sizeof(send); idata++)
+		write(fd, p++, 1);
+
+	fflush(stdout);
 out:
 	uart_close(fd);
 	ptc_grp_close(ptc_grp);
